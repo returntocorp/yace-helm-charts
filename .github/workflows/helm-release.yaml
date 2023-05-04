@@ -1,0 +1,104 @@
+name: Release YACE to ECR
+
+on:
+  workflow_dispatch:
+    inputs:
+      chart-path:
+        required: true
+        type: string
+        description: The path to the chart to be linted
+      artifact-name:
+        required: true
+        type: string
+        description: The name (key) under which to store the artifact for later use.
+      region:
+        required: true
+        type: string
+        description: AWS region in which the ECR Repo lives
+      account-id:
+        required: true
+        type: string
+        description: AWS account ID in which the ECR Repo lives
+      tag-to-push:
+        required: true
+        type: string
+        description: "The git tag to checkout and build the chart from."
+
+  workflow_call:
+    inputs:
+      chart-path:
+        required: true
+        type: string
+        description: The path to the chart to be linted.
+      artifact-name:
+        required: true
+        type: string
+        description: The name (key) under which to store the artifact for later use.
+      region:
+        required: true
+        type: string
+        description: AWS region in which the ECR Repo lives
+      account-id:
+        required: true
+        type: string
+        description: AWS account ID in which the ECR Repo lives
+
+jobs:
+  helm-package:
+    name: Helm Package
+    runs-on: ubuntu-22.04
+    outputs:
+      helm-package-filename: ${{ steps.helm-package.outputs.helm-package-filename }}
+      helm-package-version: ${{ steps.helm-package.outputs.helm-package-version }}
+    steps:
+      - uses: actions/checkout@v3
+        id: checkout
+        with:
+          ref: ${{ inputs.tag-to-push }}
+      - name: Helm Package
+        id: helm-package
+        run: |
+          helm package -u ${{ inputs.chart-path }}
+          VERSION=$(helm show chart ${{ inputs.chart-path }} | yq -r '.version')
+          echo "::set-output name=helm-package-version::$VERSION"
+          echo "::set-output name=helm-package-filename::./$(basename ${{ inputs.chart-path }})-$VERSION.tgz"
+      - name: Upload Artifact
+        id: upload
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ steps.helm-package.outputs.helm-package-filename }}
+
+  helm-push:
+    name: Helm Push
+    runs-on: ubuntu-22.04
+    needs: [helm-package]
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - name: Download Helm Package Artifact
+        id: download-artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: "${{ inputs.artifact-name }}"
+          path: ./
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: "arn:aws:iam::338683922796:role/yet-another-cloudwatch-exporter-deploy-role
+          role-duration-seconds: 900
+          role-session-name: "returntocorp-yet-another-cloudwatch-exporter-charts-build-push-gha"
+          aws-region: us-west-2
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      - name: Helm Login
+        run: |
+          aws ecr get-login-password \
+              --region ${{ inputs.region }} | helm registry login \
+              --username AWS \
+              --password-stdin ${{ inputs.account-id }}.dkr.ecr.${{ inputs.region }}.amazonaws.com
+      - name: Helm Push
+        run: |
+          helm push ${{ needs.helm-package.outputs.helm-package-filename }} oci://${{ inputs.account-id }}.dkr.ecr.${{ inputs.region }}.amazonaws.com/
