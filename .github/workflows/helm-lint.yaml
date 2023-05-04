@@ -1,0 +1,27 @@
+name: Helm Lint
+
+on:
+  workflow_dispatch:
+    inputs:
+      chart-path:
+        required: true
+        type: string
+        description: The path to the chart to be linted.
+  workflow_call:
+    inputs:
+      chart-path:
+        required: true
+        type: string
+        description: The path to the chart to be linted.
+
+jobs:
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+        id: checkout
+      - name: Helm Lint
+        id: helm-lint
+        run: |
+          helm lint ${{ inputs.chart-path }}
