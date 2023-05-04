@@ -86,7 +86,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
-          role-to-assume: "arn:aws:iam::338683922796:role/yet-another-cloudwatch-exporter-deploy-role
+          role-to-assume: "arn:aws:iam::338683922796:role/yet-another-cloudwatch-exporter-deploy-role"
           role-duration-seconds: 900
           role-session-name: "returntocorp-yet-another-cloudwatch-exporter-charts-build-push-gha"
           aws-region: us-west-2
